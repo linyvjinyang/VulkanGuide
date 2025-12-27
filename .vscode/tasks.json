@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build", // 你的任务名字
+            "type": "shell",   // 或者 process
+            "command": "msbuild", // 或者 cl.exe
+            
+            // ... 你的 args ...
+
+            // 【重点在这里】添加 options 和 env
+            "options": {
+                "env": {
+                    "VSLANG": "1033",              // 强制 VS 工具链用英语
+                    "DOTNET_CLI_UI_LANGUAGE": "en" // 强制 .NET (MSBuild核心) 用英语
+                }
+            }
+        }
+    ]
+}
