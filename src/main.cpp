@@ -1,15 +1,17 @@
-﻿#include <vulkan/vulkan.h>
-#include <iostream>
+﻿#include "vk_engine.h"
 
-int main(int argc, char* argv[]) {
-    // 仅仅是初始化一个 Instance Info，看看能不能编译通过
-    VkInstanceCreateInfo instanceInfo{};
-    instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+int main(int argc, char* argv[])
+{
+	VulkanEngine engine;
 
-    std::cout << "Vulkan Environment is ready!" << std::endl;
-    
-    // 我们不需要真的创建 Instance，只要编译不报错，
-    // 就说明 CMake 成功找到了 Vulkan SDK。
-    
-    return 0;
+	// 1. 初始化 (弹窗)
+	engine.init();	
+
+	// 2. 运行 (卡在这里循环)
+	engine.run();	
+
+	// 3. 清理 (关闭)
+	engine.cleanup();	
+
+	return 0;
 }

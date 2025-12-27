@@ -1,29 +1,68 @@
 cmake_minimum_required(VERSION 3.15)
-
-# 项目名称
 project(VulkanGuide)
 
-# 使用 C++ 17 标准 (vk-bootstrap 需要这个)
-set(CMAKE_CXX_STANDARD 17)
+# 1. 核心标准
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 告诉 CMake 我们要找 Vulkan 包
+if(MSVC)
+    add_compile_options(/utf-8)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
+# =========================================================
+#  第三方库配置
+# =========================================================
+
+# --- 1. vk-bootstrap ---
+add_subdirectory(third_party/vk-bootstrap)
+
+# --- 2. SDL2 (使用 find_package 自动查找) ---
+
+set(SDL2_PATH "${CMAKE_SOURCE_DIR}/third_party/SDL2")
+include_directories(${SDL2_PATH}/include)
+link_directories(${SDL2_PATH}/lib/x64)
+
+
+# --- 3. GLM (纯头文件 - 手动指定路径) ---
+set(GLM_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/glm")
+
+# --- 4. VMA (纯头文件) ---
+set(VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/vma")
+
+# =========================================================
+#  主程序构建
+# =========================================================
+
 find_package(Vulkan REQUIRED)
 
-# --- 源代码管理 ---
-# 告诉 CMake 我们的源代码都在 src 文件夹里
-# file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h") 
-# 为了简单起见，我们先手动指定 main.cpp，以后再用上面的自动搜索
-set(SOURCES src/main.cpp)
+# 自动搜集所有源文件 (不建议包含头文件)
+file(GLOB SOURCES "src/*.cpp")
 
-# --- 生成可执行文件 ---
 add_executable(VulkanEngine ${SOURCES})
 
-# --- 链接库 ---
-# 把 Vulkan 库连接到我们的程序上
-target_link_libraries(VulkanEngine PRIVATE Vulkan::Vulkan)
+# 包含路径
+target_include_directories(VulkanEngine PRIVATE 
+    "${CMAKE_SOURCE_DIR}/src"
+    ${GLM_INCLUDE_DIR}
+    ${VMA_INCLUDE_DIR}
+    # SDL2 和 vk-bootstrap 的头文件会通过 target_link_libraries 自动包含
+)
 
-# 如果是 Windows，可能还需要这个来避免控制台的一些问题（可选）
+# 链接库
+
+target_link_libraries(VulkanEngine
+    PRIVATE 
+    Vulkan::Vulkan
+    vk-bootstrap
+    SDL2
+    SDL2main
+)
+
+# Windows 下自动把 SDL2.dll 复制到 exe 旁边
 if(WIN32)
-    # target_link_libraries(VulkanEngine PRIVATE Vulkan::Vulkan) 
+    add_custom_command(TARGET VulkanEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SDL2_PATH}/lib/x64/SDL2.dll"
+        $<TARGET_FILE_DIR:VulkanEngine>)
 endif()
