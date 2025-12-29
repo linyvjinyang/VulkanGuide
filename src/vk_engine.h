@@ -22,12 +22,23 @@ public:
 	VkSurfaceKHR _surface;                     // 渲染表面 (窗口)
 	// -------------------------------
 
-	// [新增] --- 交换链相关 ---
+	//  --- 交换链相关 ---
 	VkSwapchainKHR _swapchain;           // 交换链句柄
 	VkFormat _swapchainImageFormat;      // 图片格式 (比如: 蓝色-绿色-红色-透明度)
 	std::vector<VkImage> _swapchainImages; // 实际的图片数组 (通常是3张)
 	std::vector<VkImageView> _swapchainImageViews; // 图片视图 (这是我们要手动创建的)
 
+	//  --- 命令与同步 ---
+	
+	VkQueue _graphicsQueue;        // 图形队列 (提交命令的地方)
+	uint32_t _graphicsQueueFamily; // 队列家族索引 (显卡有很多种队列，我们要找能画图的那种)
+
+	VkCommandPool _commandPool;    // 命令池 (分配器)
+	VkCommandBuffer _mainCommandBuffer; // 主命令缓冲区 (我们会把每一帧的指令录在这里)
+
+	VkFence _renderFence;          // 围栏: 确保 CPU 不会跑得比 GPU 快太多
+	VkSemaphore _presentSemaphore; // 信号量: 图片准备好了吗？
+	VkSemaphore _renderSemaphore;  // 信号量: 画完没？可以展示了吗？
 
 	// 初始化三部曲
 	void init();
@@ -38,5 +49,7 @@ public:
 private:
 	// ----- 新增：初始化 Vulkan 的私有函数 -----
 	void init_vulkan(); 
-	void init_swapchain(); // [新增] 初始化交换链函数
+	void init_swapchain(); //  初始化交换链函数
+	void init_commands(); //  初始化命令系统
+	void init_sync_structures(); // 初始化同步原语
 };
