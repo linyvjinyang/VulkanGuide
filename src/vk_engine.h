@@ -71,6 +71,11 @@ public:
 	VkPipelineLayout _trianglePipelineLayout;// 三角形管线布局
     VkPipeline _trianglePipeline;// 三角形管线
 
+	AllocatedBuffer _vertexBuffer;
+
+    // [新增] 2. 创建 Buffer 的辅助函数
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	
 private:
 	// ----- 新增：初始化 Vulkan 的私有函数 -----
 	void init_vulkan(); 
@@ -81,4 +86,7 @@ private:
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);// 加载着色器模块
 
 	void init_pipelines();// 初始化管线
+
+	// [新增] 3. 初始化网格数据的函数
+    void init_default_data();
 };

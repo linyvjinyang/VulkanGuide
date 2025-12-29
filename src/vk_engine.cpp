@@ -108,21 +108,8 @@ void VulkanEngine::init()// 初始化引擎
 	std::cout << "[INFO] SDL Initialized & Window Created!" << std::endl;
 
 	init_vulkan();
-	init_swapchain();
 
-	_isInitialized = true;
-	std::cout << "[INFO] Engine Initialized Successfully" << std::endl;
-
-	init_commands();      
-    init_sync_structures();
-
-    _isInitialized = true;
-    std::cout << "[INFO] Engine Fully Initialized!" << std::endl;
-
-	init_pipelines();// 初始化管线
-    _isInitialized = true;
-    std::cout << "[INFO] Pipelines Initialized!" << std::endl;
-	
+		// 初始化 VMA 分配器
 	VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = _chosenGPU;
     allocatorInfo.device = _device;
@@ -133,6 +120,23 @@ void VulkanEngine::init()// 初始化引擎
     vmaCreateAllocator(&allocatorInfo, &_allocator);// 创建 VMA 分配器
 
     std::cout << "[INFO] Vulkan Memory Allocator Initialized!" << std::endl;
+
+	init_swapchain();
+
+	_isInitialized = true;
+	std::cout << "[INFO] Engine Initialized Successfully" << std::endl;
+
+	init_commands();      
+    init_sync_structures();
+
+    _isInitialized = true;
+    std::cout << "[INFO] Engine Fully Initialized!" << std::endl;
+	init_default_data();
+	init_pipelines();// 初始化管线
+    _isInitialized = true;
+    std::cout << "[INFO] Pipelines Initialized!" << std::endl;
+	
+
 }
 
 // [新增] 实现 Vulkan 初始化逻辑
@@ -291,6 +295,9 @@ void VulkanEngine::cleanup()
         vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
         vkDestroyPipeline(_device, _trianglePipeline, nullptr);
 
+		// [新增] 销毁顶点缓冲区
+        vmaDestroyBuffer(_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
+		
 		// 注意销毁顺序：与创建顺序完全相反！
 		// 1. 销毁同步原语
         vkDestroyFence(_device, _renderFence, nullptr);
@@ -585,7 +592,7 @@ bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outS
 	return true;
 }
 
-void VulkanEngine::init_pipelines()
+void VulkanEngine::init_pipelines()// 初始化管线
 {
     VkShaderModule triangleFragShader;
     if (!load_shader_module("shaders/colored_triangle.frag.spv", &triangleFragShader)) {
@@ -668,4 +675,66 @@ void VulkanEngine::init_pipelines()
     vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
 
     std::cout << "[INFO] Triangle Pipeline Created Successfully!" << std::endl;
+}
+
+// 1. Buffer 创建助手
+AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)// 创建 Buffer 的辅助函数
+{
+	// 填写 Buffer 创建信息
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.pNext = nullptr;
+	bufferInfo.size = allocSize;
+	bufferInfo.usage = usage;
+
+	// 填写 VMA 分配信息
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = memoryUsage;
+
+	AllocatedBuffer newBuffer;
+
+	// 让 VMA 帮我们申请 Buffer 和显存，并绑定好
+	if (vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo,
+		&newBuffer._buffer,
+		&newBuffer._allocation,
+		nullptr) != VK_SUCCESS)
+	{
+		std::cout << "[ERROR] Failed to allocate buffer!" << std::endl;
+	}
+
+	return newBuffer;
+}
+
+// 2. 上传三角形数据
+void VulkanEngine::init_default_data()// 初始化默认数据
+{
+	// A. 定义顶点数组 (位置 + 颜色)
+	std::vector<Vertex> vertices = {
+		// position              // uv (占位) // normal (占位) // color
+		{ { 1.0f,  1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }, // 绿
+		{ {-1.0f,  1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }, // 绿
+		{ { 0.0f, -1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }  // 绿
+	};
+    // 注：为了验证我们真的在用这个 buffer，我故意把颜色全改成绿色！
+
+	// 计算总大小
+	const size_t bufferSize = vertices.size() * sizeof(Vertex);
+
+	// B. 在 CPU 可写的显存中创建 Buffer
+	// VK_BUFFER_USAGE_VERTEX_BUFFER_BIT: 告诉显卡这是一个顶点缓冲区
+	// VMA_MEMORY_USAGE_CPU_TO_GPU: 这种内存 CPU 可以写入，GPU 可以读取 (Host Visible)
+	_vertexBuffer = create_buffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	// C. 将数据拷入 Buffer
+	void* data;
+	// Map: 获取指向显存的指针
+	vmaMapMemory(_allocator, _vertexBuffer._allocation, &data);
+	
+	// Copy: 像操作普通内存一样拷贝数据
+	memcpy(data, vertices.data(), bufferSize);
+	
+	// Unmap: 释放指针，让显卡接管
+	vmaUnmapMemory(_allocator, _vertexBuffer._allocation);
+
+	std::cout << "[INFO] Triangle Mesh Uploaded to GPU!" << std::endl;
 }
