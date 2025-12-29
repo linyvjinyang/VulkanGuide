@@ -52,4 +52,6 @@ private:
 	void init_swapchain(); //  初始化交换链函数
 	void init_commands(); //  初始化命令系统
 	void init_sync_structures(); // 初始化同步原语
+
+	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);// 加载着色器模块
 };

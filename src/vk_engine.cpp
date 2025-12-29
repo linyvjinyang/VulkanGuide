@@ -1,5 +1,5 @@
 #include "vk_engine.h"
-
+#include<fstream>
 // 引入 SDL
 // 这里的路径依赖于我们刚才 CMake 的 include 目录设置
 // 如果报错找不到，试试 <SDL2/SDL.h>
@@ -438,4 +438,44 @@ void VulkanEngine::run()
 		// 只有在没最小化时才绘制
 		draw();
 	}
+}
+
+bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
+{
+	// 1. 以二进制模式打开文件，并将指针移到文件末尾 (ate)
+	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		return false;
+	}
+
+	// 2. 因为指针在末尾，tellg() 可以告诉我们文件有多大
+	size_t fileSize = (size_t)file.tellg();
+
+	// 3. 分配缓冲区 (uint32_t 是 SPIR-V 的对齐要求)
+	std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+
+	// 4. 指针移回开头，开始读取
+	file.seekg(0);
+	file.read((char*)buffer.data(), fileSize);
+
+	file.close();
+
+	// 5. 创建 Vulkan Shader Module
+	VkShaderModuleCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.pNext = nullptr;
+
+	// codeSize 必须是字节数
+	createInfo.codeSize = buffer.size() * sizeof(uint32_t);
+	// pCode 指向 uint32_t 数组
+	createInfo.pCode = buffer.data();
+
+	VkShaderModule shaderModule;
+	if (vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+		return false;
+	}
+
+	*outShaderModule = shaderModule;
+	return true;
 }
