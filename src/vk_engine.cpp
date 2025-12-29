@@ -297,7 +297,7 @@ void VulkanEngine::cleanup()
 
 		// [新增] 销毁顶点缓冲区
         vmaDestroyBuffer(_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
-		
+
 		// 注意销毁顺序：与创建顺序完全相反！
 		// 1. 销毁同步原语
         vkDestroyFence(_device, _renderFence, nullptr);
@@ -445,6 +445,11 @@ void VulkanEngine::draw()
     scissor.offset = { 0, 0 };
     scissor.extent = _windowExtent;
     vkCmdSetScissor(_mainCommandBuffer, 0, 1, &scissor);
+
+	// [新增] 2. 绑定顶点缓冲区 (Bind Vertex Buffer)
+    VkDeviceSize offset = 0;
+    // 绑定到 0 号槽位，使用 _vertexBuffer._buffer
+    vkCmdBindVertexBuffers(_mainCommandBuffer, 0, 1, &_vertexBuffer._buffer, &offset);
 
     // 4. 绘制！
     // vertexCount = 3 (画一个三角形)
@@ -594,17 +599,18 @@ bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outS
 
 void VulkanEngine::init_pipelines()// 初始化管线
 {
-    VkShaderModule triangleFragShader;
+  
+  VkShaderModule triangleVertexShader;
+    if (!load_shader_module("shaders/triangle_mesh.vert.spv", &triangleVertexShader)) {
+        std::cout << "[ERROR] Failed to load triangle_mesh.vert.spv" << std::endl;
+    }
+	else {
+		std::cout << "[INFO] Triangle mesh vertex shader successfully loaded" << std::endl;
+	}
+
+	 VkShaderModule triangleFragShader;
     if (!load_shader_module("shaders/colored_triangle.frag.spv", &triangleFragShader)) {
         std::cout << "[ERROR] Error when building the triangle fragment shader module" << std::endl;
-    }
-    else {
-        std::cout << "[INFO] Triangle fragment shader successfully loaded" << std::endl;
-    }
-
-    VkShaderModule triangleVertexShader;
-    if (!load_shader_module("shaders/colored_triangle.vert.spv", &triangleVertexShader)) {
-        std::cout << "[ERROR] Error when building the triangle vertex shader module" << std::endl;
     }
     else {
         std::cout << "[INFO] Triangle vertex shader successfully loaded" << std::endl;
@@ -635,8 +641,17 @@ void VulkanEngine::init_pipelines()// 初始化管线
 
     // -- B. Vertex Input (空) --
     // 我们目前把顶点硬编码在 Shader 里，所以这里不需要绑定任何 Buffer
-    pipelineBuilder._vertexInputInfo = vkinit::pipeline_vertex_input_state_create_info();
+	VkVertexInputBindingDescription bindingDescription = Vertex::get_binding_description();
+    std::vector<VkVertexInputAttributeDescription> attributeDescriptions = Vertex::get_attribute_descriptions();
 
+    // 连接到 Pipeline Builder
+    pipelineBuilder._vertexInputInfo = vkinit::pipeline_vertex_input_state_create_info();
+    
+    pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = 1;
+    pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    
+    pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = (uint32_t)attributeDescriptions.size();
+    pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
     // -- C. Input Assembly (三角形列表) --
     pipelineBuilder._inputAssembly = vkinit::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
