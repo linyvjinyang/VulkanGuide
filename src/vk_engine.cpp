@@ -341,7 +341,6 @@ void VulkanEngine::draw()
 	// =================================================================
 	// 1. 等待上一帧完成 (CPU 等待 GPU)
 	// =================================================================
-	
 	// 等待围栏 (Fence) 变为 Signaled 状态。
 	// 1000000000 ns = 1秒 (超时时间)
 	vkWaitForFences(_device, 1, &_renderFence, true, 1000000000);
@@ -367,12 +366,10 @@ void VulkanEngine::draw()
 
 	// B. 开始记录
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.pNext = nullptr;
-	// ONE_TIME_SUBMIT: 告诉驱动这个 buffer 我们只用一次，下一帧会重录。驱动可以据此优化。
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	vkBeginCommandBuffer(_mainCommandBuffer, &cmdBeginInfo);
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;// 结构体类型
+	cmdBeginInfo.pNext = nullptr;// 无扩展
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;//	 我们只会用这次
+	vkBeginCommandBuffer(_mainCommandBuffer, &cmdBeginInfo);// 开始记录
 
 	// --- [关键步骤] 图片布局转换 (Layout Transition) ---
 	// 图片刚拿来时是 "Undefined" 状态，或者是上次呈现后的 "Present" 状态。
@@ -383,15 +380,13 @@ void VulkanEngine::draw()
 	imgBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // 我们不关心它之前是什么
 	imgBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // 目标：最佳绘制状态
 	imgBarrier.image = _swapchainImages[swapchainImageIndex]; // 指定要转换哪张图
-	imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	imgBarrier.subresourceRange.baseMipLevel = 0;
-	imgBarrier.subresourceRange.levelCount = 1;
-	imgBarrier.subresourceRange.baseArrayLayer = 0;
-	imgBarrier.subresourceRange.layerCount = 1;
-	
-	// 告诉 GPU：在转换完成前，不仅要阻断像素操作，还要刷新相关的缓存
-	imgBarrier.srcAccessMask = 0;
-	imgBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;// 颜色图
+	imgBarrier.subresourceRange.baseMipLevel = 0;// 从第 0 层开始
+	imgBarrier.subresourceRange.levelCount = 1;// 仅第 0 层
+	imgBarrier.subresourceRange.baseArrayLayer = 0;// 从第 0 层开始
+	imgBarrier.subresourceRange.layerCount = 1;// 仅一层
+	imgBarrier.srcAccessMask = 0;// 之前不需要等待任何操作
+	imgBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;// 之后要等待写入颜色
 
 	// 这是一个 Pipeline Barrier，用于在 GPU 内部协调流水线阶段
 	vkCmdPipelineBarrier(
@@ -409,7 +404,6 @@ void VulkanEngine::draw()
 	// 计算一个闪烁的颜色 (根据帧数 frameNumber)
 	float flash = std::abs(std::sin(_frameNumber / 120.f));
 	VkClearValue clearValue = { { 0.0f, 0.0f, flash, 1.0f } }; // 蓝色通道闪烁
-
 	VkRenderingAttachmentInfo colorAttachment = {};
 	colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 	colorAttachment.imageView = _swapchainImageViews[swapchainImageIndex];
@@ -452,12 +446,8 @@ void VulkanEngine::draw()
     // 绑定到 0 号槽位，使用 _vertexBuffer._buffer
     vkCmdBindVertexBuffers(_mainCommandBuffer, 0, 1, &_vertexBuffer._buffer, &offset);
 
-	// =============================================================
-    // [新增] 计算变换矩阵 (让它转起来!)
-    // =============================================================
-    
-    // 1. 创建一个简单的摄像机位置
-    glm::vec3 camPos = { 0.f, 0.f, -5.f }; // 往后拉一点，这样能看到原点
+	// 1. 创建一个简单的摄像机位置
+    glm::vec3 camPos = { 0.f, 0.f, -10.f }; // 往后拉一点，这样能看到原点
     glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
     
     // 2. 创建透视投影矩阵 (Perspective Projection)
@@ -481,12 +471,11 @@ void VulkanEngine::draw()
     // 6. 发送 Push Constants!
     vkCmdPushConstants(_mainCommandBuffer, _trianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
 
+    // =============================================================
     // 4. 绘制！
-    // vertexCount = 3 (画一个三角形)
-    // instanceCount = 1
-    // firstVertex = 0
-    // firstInstance = 0
-    vkCmdDraw(_mainCommandBuffer, 3, 1, 0, 0);
+	//vkCmdDraw(_mainCommandBuffer, 3, 1, 0, 0);
+	// 绘制立方体，共 36 个顶点 (6 个面 * 2 个三角形 * 3 个顶点)
+    vkCmdDraw(_mainCommandBuffer, 36, 1, 0, 0);
 	
 	vkCmdEndRendering(_mainCommandBuffer);// 结束动态渲染
 
@@ -695,8 +684,8 @@ void VulkanEngine::init_pipelines()// 初始化管线
 
     // -- D. Rasterizer (光栅化) --
     // 多边形模式：FILL (填满), CULL_MODE_NONE (不剔除背面), CCW (逆时针为正面)
-    pipelineBuilder._rasterizer = vkinit::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-    pipelineBuilder._rasterizer.cullMode = VK_CULL_MODE_NONE;
+    pipelineBuilder._rasterizer = vkinit::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL);// 光栅化状态创建信息
+	pipelineBuilder._rasterizer.cullMode = VK_CULL_MODE_NONE;// 不剔除背面
     pipelineBuilder._rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
     // -- E. Multisampling (关闭) --
@@ -758,36 +747,78 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
 	return newBuffer;
 }
 
-// 2. 上传三角形数据
+// 2. 上传立方体数据
 void VulkanEngine::init_default_data()// 初始化默认数据
 {
-	// A. 定义顶点数组 (位置 + 颜色)
-	std::vector<Vertex> vertices = {
-		// position              // uv (占位) // normal (占位) // color
-		{ { 1.0f,  1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }, // 绿
-		{ {-1.0f,  1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }, // 绿
-		{ { 0.0f, -1.0f, 0.0f }, 0.0f, {0,0,0}, 0.0f, { 0.0f, 1.0f, 0.0f } }  // 绿
-	};
-    // 注：为了验证我们真的在用这个 buffer，我故意把颜色全改成绿色！
+	// 立方体的 8 个角点颜色
+    glm::vec3 white = {1.f, 1.f, 1.f};
+    glm::vec3 red   = {1.f, 0.f, 0.f};
+    glm::vec3 green = {0.f, 1.f, 0.f};
+    glm::vec3 blue  = {0.f, 0.f, 1.f};
 
-	// 计算总大小
-	const size_t bufferSize = vertices.size() * sizeof(Vertex);
+    // 顶点数组：每个面由两个三角形组成，共 6 面 * 2 三角 * 3 点 = 36 个点
+    std::vector<Vertex> vertices = {
+        // --- 前面 (Z+) ---
+        // pos                  // uv   // norm   // uv   // color
+        {{-0.5f, -0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
+        {{ 0.5f, -0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
+        {{ 0.5f,  0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
+        {{ 0.5f,  0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
+        {{-0.5f,  0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
+        {{-0.5f, -0.5f,  0.5f}, 0.f, {0,0,1}, 0.f, red},
 
-	// B. 在 CPU 可写的显存中创建 Buffer
-	// VK_BUFFER_USAGE_VERTEX_BUFFER_BIT: 告诉显卡这是一个顶点缓冲区
-	// VMA_MEMORY_USAGE_CPU_TO_GPU: 这种内存 CPU 可以写入，GPU 可以读取 (Host Visible)
-	_vertexBuffer = create_buffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // --- 后面 (Z-) ---
+        {{ 0.5f, -0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
+        {{-0.5f, -0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
+        {{-0.5f,  0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
+        {{-0.5f,  0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
+        {{ 0.5f,  0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
+        {{ 0.5f, -0.5f, -0.5f}, 0.f, {0,0,-1}, 0.f, green},
 
-	// C. 将数据拷入 Buffer
-	void* data;
-	// Map: 获取指向显存的指针
-	vmaMapMemory(_allocator, _vertexBuffer._allocation, &data);
-	
-	// Copy: 像操作普通内存一样拷贝数据
-	memcpy(data, vertices.data(), bufferSize);
-	
-	// Unmap: 释放指针，让显卡接管
-	vmaUnmapMemory(_allocator, _vertexBuffer._allocation);
+        // --- 顶面 (Y-) ---
+        {{-0.5f, -0.5f, -0.5f}, 0.f, {0,-1,0}, 0.f, blue},
+        {{ 0.5f, -0.5f, -0.5f}, 0.f, {0,-1,0}, 0.f, blue},
+        {{ 0.5f, -0.5f,  0.5f}, 0.f, {0,-1,0}, 0.f, blue},
+        {{ 0.5f, -0.5f,  0.5f}, 0.f, {0,-1,0}, 0.f, blue},
+        {{-0.5f, -0.5f,  0.5f}, 0.f, {0,-1,0}, 0.f, blue},
+        {{-0.5f, -0.5f, -0.5f}, 0.f, {0,-1,0}, 0.f, blue},
 
-	std::cout << "[INFO] Triangle Mesh Uploaded to GPU!" << std::endl;
+        // --- 底面 (Y+) ---
+        {{-0.5f,  0.5f,  0.5f}, 0.f, {0,1,0}, 0.f, white},
+        {{ 0.5f,  0.5f,  0.5f}, 0.f, {0,1,0}, 0.f, white},
+        {{ 0.5f,  0.5f, -0.5f}, 0.f, {0,1,0}, 0.f, white},
+        {{ 0.5f,  0.5f, -0.5f}, 0.f, {0,1,0}, 0.f, white},
+        {{-0.5f,  0.5f, -0.5f}, 0.f, {0,1,0}, 0.f, white},
+        {{-0.5f,  0.5f,  0.5f}, 0.f, {0,1,0}, 0.f, white},
+
+        // --- 左面 (X-) ---
+        {{-0.5f, -0.5f, -0.5f}, 0.f, {-1,0,0}, 0.f, white},
+        {{-0.5f, -0.5f,  0.5f}, 0.f, {-1,0,0}, 0.f, white},
+        {{-0.5f,  0.5f,  0.5f}, 0.f, {-1,0,0}, 0.f, white},
+        {{-0.5f,  0.5f,  0.5f}, 0.f, {-1,0,0}, 0.f, white},
+        {{-0.5f,  0.5f, -0.5f}, 0.f, {-1,0,0}, 0.f, white},
+        {{-0.5f, -0.5f, -0.5f}, 0.f, {-1,0,0}, 0.f, white},
+
+        // --- 右面 (X+) ---
+        {{ 0.5f, -0.5f,  0.5f}, 0.f, {1,0,0}, 0.f, blue},
+        {{ 0.5f, -0.5f, -0.5f}, 0.f, {1,0,0}, 0.f, blue},
+        {{ 0.5f,  0.5f, -0.5f}, 0.f, {1,0,0}, 0.f, blue},
+        {{ 0.5f,  0.5f, -0.5f}, 0.f, {1,0,0}, 0.f, blue},
+        {{ 0.5f,  0.5f,  0.5f}, 0.f, {1,0,0}, 0.f, blue},
+        {{ 0.5f, -0.5f,  0.5f}, 0.f, {1,0,0}, 0.f, blue},
+    };
+
+    // 计算总大小
+    const size_t bufferSize = vertices.size() * sizeof(Vertex);
+
+    // 创建 Buffer (和之前一样)
+    _vertexBuffer = create_buffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    // 拷贝数据 (和之前一样)
+    void* data;
+    vmaMapMemory(_allocator, _vertexBuffer._allocation, &data);
+    memcpy(data, vertices.data(), bufferSize);
+    vmaUnmapMemory(_allocator, _vertexBuffer._allocation);
+
+    std::cout << "[INFO] Cube Mesh Uploaded!" << std::endl;
 }
