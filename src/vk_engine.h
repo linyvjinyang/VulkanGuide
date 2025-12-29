@@ -61,6 +61,8 @@ public:
 
 	VmaAllocator _allocator; // VMA 分配器
 
+	AllocatedImage _depthImage;// 深度图像
+
 	// 初始化三部曲
 	void init();
 	void cleanup();

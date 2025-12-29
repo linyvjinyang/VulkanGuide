@@ -9,6 +9,7 @@ layout (location = 0) out vec3 outColor;
 // [新增] Push Constants 定义
 // 这就像是一个全局变量，由 C++ 直接塞进来
 layout(push_constant) uniform PushConstants {
+    vec4 data;         // <--- 新增这个来接收 C++ 里的 padding
 	mat4 renderMatrix; // 渲染矩阵 (模型+视图+投影)
 } pushConstants;
 

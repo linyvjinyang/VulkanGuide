@@ -73,71 +73,66 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device) {// 根据配置构�
     return newPipeline;
 }
 
-void VulkanEngine::init()// 初始化引擎
+void VulkanEngine::init()
 {
-	// 1. 初始化 SDL 视频子系统
-	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-		std::cout << "[ERROR] Could not initialize SDL! Error: " << SDL_GetError() << std::endl;
-		return;
-	}
+    // 1. 初始化 SDL 和 窗口
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        std::cout << "[ERROR] Could not initialize SDL! Error: " << SDL_GetError() << std::endl;
+        return;
+    }
 
-	// 2. 创建窗口
-	// SDL_WINDOW_VULKAN: 告诉 SDL 我们要用 Vulkan 渲染
-	// SDL_WINDOW_RESIZABLE: 允许拖拽改变大小
-	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
-	_window = SDL_CreateWindow(
-		"Vulkan Engine",         // 标题
-		SDL_WINDOWPOS_UNDEFINED, // X
-		SDL_WINDOWPOS_UNDEFINED, // Y
-		_windowExtent.width,     // 宽
-		_windowExtent.height,    // 高
-		window_flags
-	);
+    _window = SDL_CreateWindow(
+        "Vulkan Engine",
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
+        _windowExtent.width,
+        _windowExtent.height,
+        window_flags
+    );
 
-	if (!_window) {
-		std::cout << "[ERROR] Could not create window! Error: " << SDL_GetError() << std::endl;
-		return;
-	}
+    if (!_window) {
+        std::cout << "[ERROR] Could not create window! Error: " << SDL_GetError() << std::endl;
+        return;
+    }
+    
+    // [注意] 这里不要设置 _isInitialized = true！
+    std::cout << "[INFO] SDL Initialized & Window Created!" << std::endl;
 
-	// ----------------------------------------
-	// [新增] 2. 初始化 Vulkan
-	// ----------------------------------------
-	
+    // 2. 初始化核心 Vulkan 对象
+    init_vulkan(); 
 
-	_isInitialized = true;
-	std::cout << "[INFO] SDL Initialized & Window Created!" << std::endl;
-
-	init_vulkan();
-
-		// 初始化 VMA 分配器
-	VmaAllocatorCreateInfo allocatorInfo = {};
+    // 3. 初始化 VMA (依赖 Instance/Device)
+    VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = _chosenGPU;
     allocatorInfo.device = _device;
     allocatorInfo.instance = _instance;
-    // 告诉 VMA 我们用的是 Vulkan 1.3 的一些特性（比如 buffer device address）
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-
-    vmaCreateAllocator(&allocatorInfo, &_allocator);// 创建 VMA 分配器
+    vmaCreateAllocator(&allocatorInfo, &_allocator);
 
     std::cout << "[INFO] Vulkan Memory Allocator Initialized!" << std::endl;
 
-	init_swapchain();
+    // 4. 初始化交换链 (依赖 Device/Surface)
+    init_swapchain(); // 这里面通常也会设定 _depthImageFormat
 
-	_isInitialized = true;
-	std::cout << "[INFO] Engine Initialized Successfully" << std::endl;
-
-	init_commands();      
+    // 5. 初始化命令和同步 (依赖 Device)
+    init_commands();      
     init_sync_structures();
 
+    // 6. 初始化资源 (依赖 VMA / CommandPool)
+    init_default_data(); // 上传顶点数据
+
+    // 7. 初始化管线 (依赖 Swapchain 格式 / RenderPass信息)
+    init_pipelines(); 
+    
+    std::cout << "[INFO] Pipelines Initialized!" << std::endl;
+
+    // ====================================================
+    // [关键修正] 只有当所有步骤都跑通了，才标记引擎已初始化！
+    // ====================================================
     _isInitialized = true;
     std::cout << "[INFO] Engine Fully Initialized!" << std::endl;
-	init_default_data();
-	init_pipelines();// 初始化管线
-    _isInitialized = true;
-    std::cout << "[INFO] Pipelines Initialized!" << std::endl;
-	
-
 }
 
 // [新增] 实现 Vulkan 初始化逻辑
@@ -173,6 +168,7 @@ void VulkanEngine::init_vulkan()// 初始化 Vulkan
 		.select()
 		.value();
 
+		
 	// 4. 创建 Device (逻辑设备)
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 	vkb::Device vkbDevice = deviceBuilder.build().value();
@@ -217,6 +213,61 @@ void VulkanEngine::init_swapchain()// 初始化交换链
 
 	std::cout << "[INFO] Swapchain Initialized!" << std::endl;
 	std::cout << "[INFO] Format: " << _swapchainImageFormat << " | Images: " << _swapchainImages.size() << std::endl;
+
+	// 创建深度缓冲区 (Depth Buffer)
+    // --------------------------------------------------------
+    
+    // 1. 设置深度图格式 (D32_SFLOAT 是最常用的高精度深度格式)
+    _depthImage._imageFormat = VK_FORMAT_D32_SFLOAT;
+    _depthImage._imageExtent = {
+        _windowExtent.width,
+        _windowExtent.height,
+        1
+    };
+
+    VkImageCreateInfo dimg_info = {};
+    dimg_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    dimg_info.pNext = nullptr;
+    dimg_info.imageType = VK_IMAGE_TYPE_2D;
+    dimg_info.format = _depthImage._imageFormat;
+    // extent 定义了长宽深
+    dimg_info.extent = _depthImage._imageExtent;
+    dimg_info.mipLevels = 1;
+    dimg_info.arrayLayers = 1;
+    dimg_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    dimg_info.tiling = VK_IMAGE_TILING_OPTIMAL; // 让显卡自己优化内存布局
+    // 关键：告诉显卡这张图是用作深度/模板附件的
+    dimg_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    // 2. 分配显存 (VMA)
+    VmaAllocationCreateInfo dimg_allocinfo = {};
+    dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // 深度图只在 GPU 上用
+    dimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, 
+        &_depthImage._image, 
+        &_depthImage._allocation, 
+        nullptr);
+
+    // 3. 创建 ImageView (让管线能看到这张图)
+    VkImageViewCreateInfo dview_info = {};
+    dview_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    dview_info.pNext = nullptr;
+    dview_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    dview_info.image = _depthImage._image;
+    dview_info.format = _depthImage._imageFormat;
+    dview_info.subresourceRange.baseMipLevel = 0;
+    dview_info.subresourceRange.levelCount = 1;
+    dview_info.subresourceRange.baseArrayLayer = 0;
+    dview_info.subresourceRange.layerCount = 1;
+    dview_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT; // 标记为深度方面
+
+    if (vkCreateImageView(_device, &dview_info, nullptr, &_depthImage._imageView) != VK_SUCCESS) {
+        std::cout << "[ERROR] Failed to create depth image view!" << std::endl;
+    }
+
+    std::cout << "[INFO] Depth Buffer Created!" << std::endl;
+
 }
 
 void VulkanEngine::init_commands()// 初始化命令系统
@@ -290,50 +341,63 @@ void VulkanEngine::init_sync_structures()//
 void VulkanEngine::cleanup()
 {
 	if (_isInitialized) {
-		vkDeviceWaitIdle(_device);// 确保设备空闲，避免资源正在使用时被销毁
+    vkDeviceWaitIdle(_device); // 1. 确保 GPU 停工
+
+    // 2. 销毁管线相关 (Pipeline & Layout)
+    vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+    vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+
+    // 3. 销毁同步对象 (Fences & Semaphores)
+    vkDestroyFence(_device, _renderFence, nullptr);
+    vkDestroySemaphore(_device, _presentSemaphore, nullptr);
+    vkDestroySemaphore(_device, _renderSemaphore, nullptr);
+
+    // ==========================================================
+    // [关键修正区] 销毁资源顺序
+    // 原则：先销毁依赖 VMA 的资源 (Image/Buffer)，最后销毁 VMA 本身
+    // ==========================================================
+    
+    // 4.1 销毁顶点缓冲区
+    vmaDestroyBuffer(_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
+
+    // 4.2 销毁深度图相关
+    vkDestroyImageView(_device, _depthImage._imageView, nullptr);
+    // VMA 分配器必须还活着，才能销毁 Image！
+    vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
+
+    // 4.3 确认所有 Image/Buffer 都销毁了，现在可以安全销毁 VMA 分配器了
+    vmaDestroyAllocator(_allocator); 
+
+    // ==========================================================
+
+    // 5. 销毁命令池
+    // (Pool 会自动释放内部的 Buffer，所以不需要单独释放 CommandBuffer)
+    vkDestroyCommandPool(_device, _commandPool, nullptr);
+
+    // 6. 销毁交换链相关
+    // [修正] 必须先销毁 ImageView，再销毁 Swapchain！
+    for (int i = 0; i < _swapchainImageViews.size(); i++) {
+        vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
+    }
+    vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+
+    // 7. 销毁逻辑设备 (Device)
+    vkDestroyDevice(_device, nullptr);
+
+    // 8. 销毁表面 (Surface)
+    vkDestroySurfaceKHR(_instance, _surface, nullptr);
+
+    // 9. 销毁调试信使
+    vkb::destroy_debug_utils_messenger(_instance, _debug_messenger);
+
+    // 10. 销毁实例 (Instance)
+    vkDestroyInstance(_instance, nullptr);
+
+    // 11. 销毁窗口
+    SDL_DestroyWindow(_window);
+    SDL_Quit();
+}
 	
-		// 销毁管线和布局
-        vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
-        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
-
-		// [新增] 销毁顶点缓冲区
-        vmaDestroyBuffer(_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
-
-		// 注意销毁顺序：与创建顺序完全相反！
-		// 1. 销毁同步原语
-        vkDestroyFence(_device, _renderFence, nullptr);
-        vkDestroySemaphore(_device, _presentSemaphore, nullptr);
-        vkDestroySemaphore(_device, _renderSemaphore, nullptr);
-
-		// 2. 销毁命令池
-        // 注意：销毁 Pool 会自动释放它里面所有的 Buffer，所以不需要单独释放 Buffer
-		vkDestroyCommandPool(_device, _commandPool, nullptr);
-		
-		vmaDestroyAllocator(_allocator);// 销毁 VMA 分配器
-
-		// 3. 销毁交换链相关资源
-		// 必须先销毁 Swapchain，再销毁 Device，因为 Swapchain 依赖 Device
-		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
-		// 销毁 ImageViews
-		for (int i = 0; i < _swapchainImageViews.size(); i++) {
-			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
-		}
-		//4. 销毁逻辑设备
-		vkDestroyDevice(_device, nullptr);
-
-		// 5. 销毁表面
-		vkDestroySurfaceKHR(_instance, _surface, nullptr);
-
-		// 6. 销毁调试信使 (vk-bootstrap 提供的辅助函数)
-		vkb::destroy_debug_utils_messenger(_instance, _debug_messenger);
-
-		// 7. 销毁实例
-		vkDestroyInstance(_instance, nullptr);
-
-		// 最后销毁窗口
-		SDL_DestroyWindow(_window);
-		SDL_Quit();
-	}
 }
 
 void VulkanEngine::draw()
@@ -399,6 +463,37 @@ void VulkanEngine::draw()
 		1, &imgBarrier // 也就是上面的那个 barrier
 	);
 
+	// [修正] 1. 添加深度图的布局转换 Barrier (必须在 BeginRendering 之前执行)
+	VkImageMemoryBarrier depthBarrier = {};
+	depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	depthBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	depthBarrier.image = _depthImage._image;
+	depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	depthBarrier.subresourceRange.levelCount = 1;
+	depthBarrier.subresourceRange.layerCount = 1;
+	depthBarrier.srcAccessMask = 0;
+	depthBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	vkCmdPipelineBarrier(
+		_mainCommandBuffer,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &depthBarrier
+	);
+
+	// 准备深度附件的信息
+	VkRenderingAttachmentInfo depthAttachment = {};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = _depthImage._imageView;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // 最佳深度写入状态
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // 每一帧开始时清空深度
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil = { 1.0f, 0 }; // 清空值为 1.0 (最远)
+
 	// --- [动态渲染] 开始画画 (Dynamic Rendering) ---
 	
 	// 计算一个闪烁的颜色 (根据帧数 frameNumber)
@@ -417,11 +512,14 @@ void VulkanEngine::draw()
 	renderInfo.renderArea = { 0, 0, _windowExtent.width, _windowExtent.height };
 	renderInfo.layerCount = 1;
 	renderInfo.colorAttachmentCount = 1;
-	renderInfo.pColorAttachments = &colorAttachment;
+	renderInfo.pColorAttachments = &colorAttachment;// 指定颜色附件
+	renderInfo.pDepthAttachment = &depthAttachment;// 指定深度附件
 
 	// 开始动态渲染 (Vulkan 1.3 核心功能)
 	vkCmdBeginRendering(_mainCommandBuffer, &renderInfo);
-
+// 现在我们可以像以前那样记录绘图命令了！
+// =============================================================
+	
 	// 1. 绑定管线
     vkCmdBindPipeline(_mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);// 绑定三角形管线
 
@@ -466,6 +564,7 @@ void VulkanEngine::draw()
 
     // 5. 定义 PushConstant 数据
     MeshPushConstants constants;
+	constants.data = glm::vec4(1.0f, 0.5f, 0.25f, 1.0f); // RGBA 颜色
     constants.render_matrix = meshMatrix;
 
     // 6. 发送 Push Constants!
@@ -695,15 +794,15 @@ void VulkanEngine::init_pipelines()// 初始化管线
     pipelineBuilder._colorBlendAttachment = vkinit::pipeline_color_blend_attachment_state();
 
     // -- G. Depth Stencil (关闭深度测试) --
-    pipelineBuilder._depthStencil = vkinit::pipeline_depth_stencil_state_create_info(false, false, VK_COMPARE_OP_ALWAYS);
+    pipelineBuilder._depthStencil = vkinit::pipeline_depth_stencil_state_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);// 启用深度测试和写入，比较操作为 Less or Equal
 
     // -- H. Rendering Info (动态渲染) --
     // 这里非常关键！告诉管线我们要画到什么格式的图片上
     pipelineBuilder._renderInfo = {};
-    pipelineBuilder._renderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    pipelineBuilder._renderInfo.colorAttachmentCount = 1;
-    pipelineBuilder._renderInfo.pColorAttachmentFormats = &_swapchainImageFormat;
-    pipelineBuilder._renderInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED; // 暂时没有深度缓冲
+    pipelineBuilder._renderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;// 动态渲染创建信息
+    pipelineBuilder._renderInfo.colorAttachmentCount = 1;// 一个颜色附件
+    pipelineBuilder._renderInfo.pColorAttachmentFormats = &_swapchainImageFormat;// 颜色图格式
+    pipelineBuilder._renderInfo.depthAttachmentFormat = _depthImage._imageFormat; // 深度图格式
 
     // -- I. 赋予 Layout --
     pipelineBuilder._pipelineLayout = _trianglePipelineLayout;

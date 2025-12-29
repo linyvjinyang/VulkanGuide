@@ -36,6 +36,14 @@ struct AllocatedBuffer {
     VmaAllocation _allocation;
 };
 
+struct AllocatedImage {// 分配的图像结构体
+    VkImage _image;
+    VkImageView _imageView;
+    VmaAllocation _allocation;
+    VkExtent3D _imageExtent;
+    VkFormat _imageFormat;
+};
+
 // [新增] 顶点定义
 struct Vertex {
     glm::vec3 position; // 位置
