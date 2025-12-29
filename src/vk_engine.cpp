@@ -1,3 +1,5 @@
+#define VMA_IMPLEMENTATION // 启用 VMA 实现
+
 #include "vk_engine.h"// 包含 Vulkan 引擎的头文件
 #include "vk_initializers.h"// 包含我们自定义的初始化辅助函数
 
@@ -121,6 +123,16 @@ void VulkanEngine::init()// 初始化引擎
     _isInitialized = true;
     std::cout << "[INFO] Pipelines Initialized!" << std::endl;
 	
+	VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice = _chosenGPU;
+    allocatorInfo.device = _device;
+    allocatorInfo.instance = _instance;
+    // 告诉 VMA 我们用的是 Vulkan 1.3 的一些特性（比如 buffer device address）
+    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
+    vmaCreateAllocator(&allocatorInfo, &_allocator);// 创建 VMA 分配器
+
+    std::cout << "[INFO] Vulkan Memory Allocator Initialized!" << std::endl;
 }
 
 // [新增] 实现 Vulkan 初始化逻辑
@@ -289,8 +301,9 @@ void VulkanEngine::cleanup()
         // 注意：销毁 Pool 会自动释放它里面所有的 Buffer，所以不需要单独释放 Buffer
 		vkDestroyCommandPool(_device, _commandPool, nullptr);
 		
+		vmaDestroyAllocator(_allocator);// 销毁 VMA 分配器
+
 		// 3. 销毁交换链相关资源
-	
 		// 必须先销毁 Swapchain，再销毁 Device，因为 Swapchain 依赖 Device
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 		// 销毁 ImageViews

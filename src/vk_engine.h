@@ -57,7 +57,9 @@ public:
 
 	VkFence _renderFence;          // 围栏: 确保 CPU 不会跑得比 GPU 快太多
 	VkSemaphore _presentSemaphore; // 信号量: 图片准备好了吗？
-	VkSemaphore _renderSemaphore;  // 信号量: 画完没？可以展示了吗？
+	VkSemaphore _renderSemaphore;  // 信号量: 画完了吗？
+
+	VmaAllocator _allocator; // VMA 分配器
 
 	// 初始化三部曲
 	void init();
