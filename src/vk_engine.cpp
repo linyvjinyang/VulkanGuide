@@ -11,6 +11,7 @@
 #include <SDL_vulkan.h>// SDL 的 Vulkan 扩展
 
 #include <cmath>// 数学库
+#include <glm/gtx/transform.hpp>// GLM 变换扩展
 
 #include <VkBootstrap.h>// 引入 vk-bootstrap，简化 Vulkan 初始化
 
@@ -428,7 +429,7 @@ void VulkanEngine::draw()
 	vkCmdBeginRendering(_mainCommandBuffer, &renderInfo);
 
 	// 1. 绑定管线
-    vkCmdBindPipeline(_mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+    vkCmdBindPipeline(_mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);// 绑定三角形管线
 
     // 2. 设置动态视口 (Dynamic Viewport)
     VkViewport viewport = {};
@@ -450,6 +451,35 @@ void VulkanEngine::draw()
     VkDeviceSize offset = 0;
     // 绑定到 0 号槽位，使用 _vertexBuffer._buffer
     vkCmdBindVertexBuffers(_mainCommandBuffer, 0, 1, &_vertexBuffer._buffer, &offset);
+
+	// =============================================================
+    // [新增] 计算变换矩阵 (让它转起来!)
+    // =============================================================
+    
+    // 1. 创建一个简单的摄像机位置
+    glm::vec3 camPos = { 0.f, 0.f, -5.f }; // 往后拉一点，这样能看到原点
+    glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
+    
+    // 2. 创建透视投影矩阵 (Perspective Projection)
+    // fov=70度, 宽高比=窗口宽高比, 近平面=0.1, 远平面=200
+    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 0.1f, 200.0f);
+    
+    // [修正] GLM 的 Y 轴是向上的，Vulkan 的 Y 轴是向下的。
+    // 我们把 Y 轴翻转一下，否则画面是倒的
+    projection[1][1] *= -1;
+
+    // 3. 计算模型矩阵 (Model Matrix) - 让它自转
+    glm::mat4 model = glm::rotate(glm::mat4(1.f), glm::radians(_frameNumber * 0.4f), glm::vec3(0, 1, 0));
+
+    // 4. 最终矩阵 = 投影 * 视图 * 模型
+    glm::mat4 meshMatrix = projection * view * model;
+
+    // 5. 定义 PushConstant 数据
+    MeshPushConstants constants;
+    constants.render_matrix = meshMatrix;
+
+    // 6. 发送 Push Constants!
+    vkCmdPushConstants(_mainCommandBuffer, _trianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
 
     // 4. 绘制！
     // vertexCount = 3 (画一个三角形)
@@ -616,15 +646,23 @@ void VulkanEngine::init_pipelines()// 初始化管线
         std::cout << "[INFO] Triangle vertex shader successfully loaded" << std::endl;
     }
 
+	// [新增] 1. 配置 Push Constant Range
+    VkPushConstantRange pushConstantRange = {};// 推送常量范围
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(MeshPushConstants);
+
+	// 告诉 Vulkan 这个数据只在 Vertex Shader 里用
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;// 推送常量阶段标志
+
     // 1. 创建 Pipeline Layout (管线布局)
-    // 它是着色器输入的“目录”，现在我们是空的
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    //  管线布局里告诉 Vulkan 我们会用到哪些资源 (Descriptor Sets) 和 Push Constants
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = vkinit::pipeline_layout_create_info();// 管线布局创建信息
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.pNext = nullptr;
     pipelineLayoutInfo.setLayoutCount = 0;
     pipelineLayoutInfo.pSetLayouts = nullptr;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;// 我们有 1 个 Push Constant Range
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;// 指向上面定义的 Push Constant Range
 
     if (vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &_trianglePipelineLayout) != VK_SUCCESS) {
         std::cout << "[ERROR] Failed to create pipeline layout" << std::endl;

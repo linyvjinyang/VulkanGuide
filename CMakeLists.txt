@@ -41,6 +41,8 @@ file(GLOB SOURCES "src/*.cpp")
 
 add_executable(VulkanEngine ${SOURCES})
 
+target_compile_definitions(VulkanEngine PUBLIC GLM_ENABLE_EXPERIMENTAL)
+
 # 包含路径
 target_include_directories(VulkanEngine PRIVATE 
     "${CMAKE_SOURCE_DIR}/src"

@@ -14,14 +14,20 @@
 #include <vulkan/vulkan.h>
 
 // GLM
+// 强制 GLM 使用 Vulkan 的坐标系 (Y 轴向下，深度 0 到 1)
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>// glm::vec4
+#include <glm/mat4x4.hpp>// glm::mat4
 
 // VMA
 #include <vk_mem_alloc.h>
 
+
+struct MeshPushConstants {// 推送常量结构体
+	glm::vec4 data; // 预留一些额外数据 (比如颜色倍增等)
+	glm::mat4 render_matrix; // 对应 shader 里的 renderMatrix
+};
 
 // [新增] 简单的分配缓冲区结构体
 // 每次我们用 VMA 分配内存，都会得到一个 VkBuffer (Vulkan句柄) 和 VmaAllocation (VMA句柄)
