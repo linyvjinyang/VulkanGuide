@@ -5,6 +5,25 @@
 struct SDL_Window;
 union SDL_Event;
 
+class PipelineBuilder {// 用于构建图形管线的辅助类
+public:
+	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages; // 着色器阶段
+	VkPipelineVertexInputStateCreateInfo _vertexInputInfo;      // 顶点输入格式
+	VkPipelineInputAssemblyStateCreateInfo _inputAssembly;      // 图元装配 (三角形/线/点)
+	VkViewport _viewport;                                       // 视口 (废弃，我们用动态视口)
+	VkRect2D _scissor;                                          // 剪裁 (废弃，我们用动态视口)
+	VkPipelineRasterizationStateCreateInfo _rasterizer;         // 光栅化设置
+	VkPipelineColorBlendAttachmentState _colorBlendAttachment;  // 颜色混合
+	VkPipelineMultisampleStateCreateInfo _multisampling;        // 多重采样
+	VkPipelineLayout _pipelineLayout;                           // 管线布局 (Push Constants 等)
+    VkPipelineDepthStencilStateCreateInfo _depthStencil;        // 深度测试
+    VkPipelineRenderingCreateInfo _renderInfo;                  // 动态渲染信息
+    VkFormat _colorAttachmentformat;                            // 颜色格式
+
+	// 核心函数：根据以上配置构建管线
+	VkPipeline build_pipeline(VkDevice device);
+};
+
 class VulkanEngine {
 public:
 	bool _isInitialized{ false };
@@ -46,6 +65,10 @@ public:
 	void run();
 	void draw();
 
+	// 三角形相关
+	VkPipelineLayout _trianglePipelineLayout;// 三角形管线布局
+    VkPipeline _trianglePipeline;// 三角形管线
+
 private:
 	// ----- 新增：初始化 Vulkan 的私有函数 -----
 	void init_vulkan(); 
@@ -54,4 +77,6 @@ private:
 	void init_sync_structures(); // 初始化同步原语
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);// 加载着色器模块
+
+	void init_pipelines();// 初始化管线
 };

@@ -1,17 +1,76 @@
-#include "vk_engine.h"
+#include "vk_engine.h"// 包含 Vulkan 引擎的头文件
+#include "vk_initializers.h"// 包含我们自定义的初始化辅助函数
+
 #include<fstream>
 // 引入 SDL
 // 这里的路径依赖于我们刚才 CMake 的 include 目录设置
 // 如果报错找不到，试试 <SDL2/SDL.h>
-#include <SDL.h>
-#include <SDL_vulkan.h>
+#include <SDL.h>// SDL 主头文件
+#include <SDL_vulkan.h>// SDL 的 Vulkan 扩展
 
-#include <cmath>
+#include <cmath>// 数学库
 
-#include <VkBootstrap.h>
+#include <VkBootstrap.h>// 引入 vk-bootstrap，简化 Vulkan 初始化
 
 
-void VulkanEngine::init()
+VkPipeline PipelineBuilder::build_pipeline(VkDevice device) {// 根据配置构建管线
+    // 1. 设置视口状态 (Viewport State)
+    // 虽然我们使用动态视口，但这个结构体还是得有，只是指向 nullptr
+    VkPipelineViewportStateCreateInfo viewportState = {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.pNext = nullptr;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    // 2. 设置颜色混合状态 (Color Blending)
+    // 这是一个全局设置，通常只要把 attachment 填进去就行
+    VkPipelineColorBlendStateCreateInfo colorBlending = {};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.pNext = nullptr;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &_colorBlendAttachment;
+
+    // 3. 设置动态状态 (Dynamic State) [关键!]
+    // 允许我们在绘制时改变视口大小，而不用重建管线
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicInfo = {};
+    dynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicInfo.dynamicStateCount = (uint32_t)dynamicStates.size();
+    dynamicInfo.pDynamicStates = dynamicStates.data();
+
+    // 4. 组装最终的 CreateInfo
+    VkGraphicsPipelineCreateInfo pipelineInfo = {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    // 连接到动态渲染信息 (Vulkan 1.3)
+    pipelineInfo.pNext = &_renderInfo;
+
+    pipelineInfo.stageCount = (uint32_t)_shaderStages.size();
+    pipelineInfo.pStages = _shaderStages.data();
+    pipelineInfo.pVertexInputState = &_vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &_inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &_rasterizer;
+    pipelineInfo.pMultisampleState = &_multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDepthStencilState = &_depthStencil;
+    pipelineInfo.layout = _pipelineLayout;
+    pipelineInfo.pDynamicState = &dynamicInfo;
+
+    // 5. 真正的创建调用
+    VkPipeline newPipeline;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &newPipeline) != VK_SUCCESS) {
+        std::cout << "[ERROR] Failed to create pipeline" << std::endl;
+        return VK_NULL_HANDLE; // 失败返回空句柄
+    }
+    return newPipeline;
+}
+
+void VulkanEngine::init()// 初始化引擎
 {
 	// 1. 初始化 SDL 视频子系统
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -57,11 +116,15 @@ void VulkanEngine::init()
 
     _isInitialized = true;
     std::cout << "[INFO] Engine Fully Initialized!" << std::endl;
+
+	init_pipelines();// 初始化管线
+    _isInitialized = true;
+    std::cout << "[INFO] Pipelines Initialized!" << std::endl;
 	
 }
 
 // [新增] 实现 Vulkan 初始化逻辑
-void VulkanEngine::init_vulkan()
+void VulkanEngine::init_vulkan()// 初始化 Vulkan
 {
 	// 1. 创建 Instance (实例)
 	// vkb::InstanceBuilder 是一个“建造者模式”的工具，帮我们配置参数
@@ -113,7 +176,7 @@ void VulkanEngine::init_vulkan()
 }
 
 // 在 init_vulkan 之后添加这个函数
-void VulkanEngine::init_swapchain()
+void VulkanEngine::init_swapchain()// 初始化交换链
 {
 	vkb::SwapchainBuilder swapchainBuilder{_chosenGPU, _device, _surface };
 
@@ -139,7 +202,7 @@ void VulkanEngine::init_swapchain()
 	std::cout << "[INFO] Format: " << _swapchainImageFormat << " | Images: " << _swapchainImages.size() << std::endl;
 }
 
-void VulkanEngine::init_commands()
+void VulkanEngine::init_commands()// 初始化命令系统
 {
 	// 1. 创建 Command Pool
 	// 它的作用是分配 Command Buffer
@@ -173,7 +236,7 @@ void VulkanEngine::init_commands()
 	std::cout << "[INFO] Command Pool & Buffer Created!" << std::endl;
 }
 
-void VulkanEngine::init_sync_structures()
+void VulkanEngine::init_sync_structures()//	
 {
 	// 1. 创建 Fence (围栏)
 	VkFenceCreateInfo fenceInfo = {};
@@ -210,7 +273,12 @@ void VulkanEngine::init_sync_structures()
 void VulkanEngine::cleanup()
 {
 	if (_isInitialized) {
+		vkDeviceWaitIdle(_device);// 确保设备空闲，避免资源正在使用时被销毁
 	
+		// 销毁管线和布局
+        vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+
 		// 注意销毁顺序：与创建顺序完全相反！
 		// 1. 销毁同步原语
         vkDestroyFence(_device, _renderFence, nullptr);
@@ -339,9 +407,33 @@ void VulkanEngine::draw()
 	// 开始动态渲染 (Vulkan 1.3 核心功能)
 	vkCmdBeginRendering(_mainCommandBuffer, &renderInfo);
 
-	// ==> 这里以后会写画三角形的代码 <==
+	// 1. 绑定管线
+    vkCmdBindPipeline(_mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+
+    // 2. 设置动态视口 (Dynamic Viewport)
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)_windowExtent.width;
+    viewport.height = (float)_windowExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(_mainCommandBuffer, 0, 1, &viewport);
+
+    // 3. 设置动态剪裁 (Dynamic Scissor)
+    VkRect2D scissor = {};
+    scissor.offset = { 0, 0 };
+    scissor.extent = _windowExtent;
+    vkCmdSetScissor(_mainCommandBuffer, 0, 1, &scissor);
+
+    // 4. 绘制！
+    // vertexCount = 3 (画一个三角形)
+    // instanceCount = 1
+    // firstVertex = 0
+    // firstInstance = 0
+    vkCmdDraw(_mainCommandBuffer, 3, 1, 0, 0);
 	
-	vkCmdEndRendering(_mainCommandBuffer);
+	vkCmdEndRendering(_mainCommandBuffer);// 结束动态渲染
 
 	// --- [关键步骤] 图片布局转换 (变回去) ---
 	// 画完了，现在要把图片变成 "Present Src" (最佳呈现状态)，以便显示器读取
@@ -478,4 +570,89 @@ bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outS
 
 	*outShaderModule = shaderModule;
 	return true;
+}
+
+void VulkanEngine::init_pipelines()
+{
+    VkShaderModule triangleFragShader;
+    if (!load_shader_module("shaders/colored_triangle.frag.spv", &triangleFragShader)) {
+        std::cout << "[ERROR] Error when building the triangle fragment shader module" << std::endl;
+    }
+    else {
+        std::cout << "[INFO] Triangle fragment shader successfully loaded" << std::endl;
+    }
+
+    VkShaderModule triangleVertexShader;
+    if (!load_shader_module("shaders/colored_triangle.vert.spv", &triangleVertexShader)) {
+        std::cout << "[ERROR] Error when building the triangle vertex shader module" << std::endl;
+    }
+    else {
+        std::cout << "[INFO] Triangle vertex shader successfully loaded" << std::endl;
+    }
+
+    // 1. 创建 Pipeline Layout (管线布局)
+    // 它是着色器输入的“目录”，现在我们是空的
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.pNext = nullptr;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+    if (vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &_trianglePipelineLayout) != VK_SUCCESS) {
+        std::cout << "[ERROR] Failed to create pipeline layout" << std::endl;
+    }
+
+    // 2. 开始构建 Pipeline
+    PipelineBuilder pipelineBuilder;
+
+    // -- A. Shader Stages --
+    pipelineBuilder._shaderStages.push_back(
+        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, triangleVertexShader));
+    pipelineBuilder._shaderStages.push_back(
+        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
+
+    // -- B. Vertex Input (空) --
+    // 我们目前把顶点硬编码在 Shader 里，所以这里不需要绑定任何 Buffer
+    pipelineBuilder._vertexInputInfo = vkinit::pipeline_vertex_input_state_create_info();
+
+    // -- C. Input Assembly (三角形列表) --
+    pipelineBuilder._inputAssembly = vkinit::pipeline_input_assembly_state_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+    // -- D. Rasterizer (光栅化) --
+    // 多边形模式：FILL (填满), CULL_MODE_NONE (不剔除背面), CCW (逆时针为正面)
+    pipelineBuilder._rasterizer = vkinit::pipeline_rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+    pipelineBuilder._rasterizer.cullMode = VK_CULL_MODE_NONE;
+    pipelineBuilder._rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+    // -- E. Multisampling (关闭) --
+    pipelineBuilder._multisampling = vkinit::pipeline_multisample_state_create_info();
+
+    // -- F. Color Blend (关闭混合) --
+    pipelineBuilder._colorBlendAttachment = vkinit::pipeline_color_blend_attachment_state();
+
+    // -- G. Depth Stencil (关闭深度测试) --
+    pipelineBuilder._depthStencil = vkinit::pipeline_depth_stencil_state_create_info(false, false, VK_COMPARE_OP_ALWAYS);
+
+    // -- H. Rendering Info (动态渲染) --
+    // 这里非常关键！告诉管线我们要画到什么格式的图片上
+    pipelineBuilder._renderInfo = {};
+    pipelineBuilder._renderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    pipelineBuilder._renderInfo.colorAttachmentCount = 1;
+    pipelineBuilder._renderInfo.pColorAttachmentFormats = &_swapchainImageFormat;
+    pipelineBuilder._renderInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED; // 暂时没有深度缓冲
+
+    // -- I. 赋予 Layout --
+    pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
+
+    // 3. 最终构建
+    _trianglePipeline = pipelineBuilder.build_pipeline(_device);
+    
+    // 4. 清理 Shader Module
+    // 管线创建好后，Shader Module 就可以丢掉了，因为代码已经被拷贝到管线里了
+    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+
+    std::cout << "[INFO] Triangle Pipeline Created Successfully!" << std::endl;
 }
